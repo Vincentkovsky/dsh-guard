@@ -113,6 +113,82 @@ export interface InstallRecord {
   expectedBundles: string[]
 }
 
+export type LifecycleAction = 'install' | 'update' | 'uninstall' | 'repair' | 'rollback' | 'legacy-import'
+
+export interface ManagedPluginV1 {
+  schemaVersion: 1
+  packageName: string
+  version: string
+  reportId: string
+  artifactSha256: string
+  installedAt: string
+  updatedAt: string
+  bundles: string[]
+}
+
+export interface ProfileGenerationV1 {
+  schemaVersion: 1
+  id: string
+  profile: string
+  createdAt: string
+  action: LifecycleAction
+  parentGenerationId?: string
+  restoredGenerationId?: string
+  reportId?: string
+  packageName?: string
+  profileFingerprint: string
+  configHash?: string
+  bundles: string[]
+  plugins: ManagedPluginV1[]
+}
+
+export interface ManagedProfileV1 {
+  schemaVersion: 1
+  profile: string
+  createdAt: string
+  updatedAt: string
+  lastVerifiedAt?: string
+  currentGenerationId: string
+  generations: ProfileGenerationV1[]
+}
+
+export interface ManagedProfileViewV1 {
+  schemaVersion: 1
+  profile: string
+  generationId: string
+  state: GuardStatus
+  detail: string
+  plugins: ManagedPluginV1[]
+  generationCount: number
+}
+
+export interface LifecycleOperationResultV1 {
+  schemaVersion: 1
+  action: 'uninstall' | 'repair' | 'rollback'
+  profile: string
+  generationId: string
+  previousGenerationId: string
+  packageName?: string
+  restoredGenerationId?: string
+  backupPath?: string
+  noOp: boolean
+}
+
+export interface GenerationSnapshotFileV1 {
+  name: 'package.json' | 'pnpm-lock.yaml' | 'pnpm-workspace.yaml' | 'cordis.yml' | 'cordis.patch.yml'
+  present: boolean
+  sha256?: string
+}
+
+export interface GenerationSnapshotManifestV1 {
+  schemaVersion: 1
+  profile: string
+  generationId: string
+  createdAt: string
+  profileFingerprint: string
+  files: GenerationSnapshotFileV1[]
+}
+
 export interface GuardEvent {
   schemaVersion: 1
   id: string
@@ -176,4 +252,8 @@ export interface VerifyResult {
   expected?: InstallRecord
   detail: string
   unmanagedBundles: string[]
+  managedPlugins?: ManagedPluginV1[]
+  generationId?: string
+  lastVerifiedAt?: string
+  reportId?: string
 }

@@ -1,21 +1,27 @@
 import { spawn } from 'node:child_process'
-import { copyFile, open, readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { Approval, InstallRecord, ScanReport } from './types.js'
+import { copyFile, open, readFile, rename, rm } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+import type { Approval, InstallRecord, ManagedPluginV1, ScanReport } from './types.js'
 import type { StatePaths } from './state.js'
-import { appendAudit, appendEvent, loadApproval, loadReport, reportDigest, saveApproval, saveInstall } from './state.js'
+import { appendAudit, appendEvent, deleteInstall, loadApproval, loadInstall, loadReport, reportDigest, saveApproval, saveInstall } from './state.js'
 import { dshHomePath, locateDshBin, snapshotProfile } from './profile.js'
 import { policyHash, DEFAULT_POLICY } from './policy.js'
-import { ensurePrivateDir, sanitizeText, sha256File, sortableId } from './util.js'
+import { currentGeneration, loadOrImportManagedProfile, recordProfileGeneration } from './lifecycle.js'
+import { ensurePrivateDir, sanitizeText, sha256, sha256File, sortableId } from './util.js'
 
-function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; output: string }> {
+function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; output: string; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
-    const chunks: Buffer[] = []
-    child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
-    child.stderr.on('data', (chunk: Buffer) => chunks.push(chunk))
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk))
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
     child.on('error', reject)
-    child.on('close', (code) => resolvePromise({ code: code ?? 1, output: Buffer.concat(chunks).toString('utf8') }))
+    child.on('close', (code) => {
+      const out = Buffer.concat(stdout).toString('utf8')
+      const err = Buffer.concat(stderr).toString('utf8')
+      resolvePromise({ code: code ?? 1, output: `${out}${err}`, stdout: out, stderr: err })
+    })
   })
 }
 
@@ -40,9 +46,9 @@ export async function approveReport(reportId: string, paths: StatePaths): Promis
 }
 
 async function profileIsActive(profile: string): Promise<boolean> {
-  const result = await run('/bin/ps', ['-axo', 'command='], { PATH: '/usr/bin:/bin' }).catch(() => ({ code: 1, output: '' }))
+  const result = await run('/bin/ps', ['-axo', 'command='], { PATH: '/usr/bin:/bin' }).catch(() => ({ code: 1, output: '', stdout: '', stderr: '' }))
   if (result.code !== 0) return true
-  return result.output.split(/\r?\n/).some((line) => /(?:deepseek-ai\/dsh|\/dsh\/lib\/bin\.js|\bdsh\b)/.test(line) && new RegExp(`(?:--profile\\s+${profile}\\b|\\bdsh\\s+${profile}\\b)`).test(line))
+  return result.output.split(/\r?\n/).some((line) => /(?:@deepseek-ai\/dsh|\/dsh\/lib\/bin\.js|(?:^|\s)dsh(?:\s|$))/.test(line) && new RegExp(`(?:--profile\\s+${profile}\\b|\\bdsh\\s+${profile}\\b)`).test(line))
 }
 
 async function backupProfile(report: ScanReport, paths: StatePaths): Promise<string> {
@@ -69,7 +75,29 @@ async function restoreBackup(report: ScanReport, backup: string): Promise<boolea
   }
 }
 
-export async function installApproved(reportId: string, paths: StatePaths): Promise<InstallRecord> {
+async function quarantineNodeModules(profilePath: string): Promise<string | undefined> {
+  const source = join(profilePath, 'node_modules')
+  const backup = join(dirname(profilePath), `.${basename(profilePath)}-node_modules-${sortableId('bak')}`)
+  try {
+    await rename(source, backup)
+    return backup
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+}
+
+async function restoreNodeModules(profilePath: string, backup: string | undefined): Promise<boolean> {
+  try {
+    await rm(join(profilePath, 'node_modules'), { recursive: true, force: true })
+    if (backup) await rename(backup, join(profilePath, 'node_modules'))
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function applyApprovedReport(reportId: string, paths: StatePaths, mode: 'install' | 'update'): Promise<InstallRecord> {
   const report = await loadReport(reportId, paths)
   const approval = await loadApproval(reportId, paths)
   if (report.verdict === 'blocked') throw new Error('Blocked reports cannot be installed')
@@ -79,6 +107,17 @@ export async function installApproved(reportId: string, paths: StatePaths): Prom
   if (await sha256File(report.source.artifactPath) !== approval.artifactSha256) throw new Error('Artifact changed after approval')
   const before = await snapshotProfile(report.profile.name)
   if (before.fingerprint !== approval.profileFingerprint) throw new Error('Target profile changed after approval; rescan required')
+  const managed = await loadOrImportManagedProfile(report.profile.name, paths)
+  const previousGeneration = managed ? currentGeneration(managed) : undefined
+  if (previousGeneration && previousGeneration.profileFingerprint !== before.fingerprint) {
+    throw new Error(`Managed profile ${report.profile.name} has drifted; repair or explicitly resolve drift before changing plugins`)
+  }
+  const previousPlugin = previousGeneration?.plugins.find((plugin) => plugin.packageName === report.source.name)
+  if (mode === 'install' && previousPlugin) throw new Error(`${report.source.name} is already managed; use plugins update with an approved report`)
+  if (mode === 'update' && !previousPlugin) throw new Error(`${report.source.name} is not managed; use install for the first guarded installation`)
+  if (mode === 'update' && previousPlugin?.version === report.source.version && previousPlugin.artifactSha256 === report.source.sha256) {
+    throw new Error(`${report.source.name}@${report.source.version} is already the current managed artifact`)
+  }
   if (await profileIsActive(report.profile.name)) throw new Error(`DSH profile ${report.profile.name} appears active; stop it before installing`)
   const dsh = await locateDshBin()
   if (!dsh) throw new Error('DSH executable not found; set DSH_BIN')
@@ -88,6 +127,8 @@ export async function installApproved(reportId: string, paths: StatePaths): Prom
   try { handle = await open(lockPath, 'wx', 0o600) }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`Profile ${report.profile.name} is locked by another DSH Guard operation`); throw error }
   const backup = await backupProfile(report, paths)
+  const priorLegacy = await loadInstall(report.profile.name, paths)
+  let nodeModulesBackup: string | undefined
   try {
     const env: NodeJS.ProcessEnv = {
       PATH: process.env.PATH ?? '/usr/bin:/bin',
@@ -98,22 +139,38 @@ export async function installApproved(reportId: string, paths: StatePaths): Prom
       CI: '1',
       NO_COLOR: '1',
     }
+    const store = join(paths.cache, 'pnpm-store')
+    nodeModulesBackup = await quarantineNodeModules(report.profile.path)
+    const hydration = await run(dsh.command, [
+      ...dsh.prefix, 'plugin', '--profile', report.profile.name, 'install', '--ignore-scripts', '--frozen-lockfile', '--offline',
+      '--store-dir', store,
+    ], env)
+    if (hydration.code !== 0) throw new Error(`Offline baseline hydration failed: ${sanitizeText(hydration.output, 900)}`)
     const command = await run(dsh.command, [
       ...dsh.prefix, 'plugin', '--profile', report.profile.name, 'add', '--save-exact', '--ignore-scripts', '--offline',
-      '--store-dir', join(paths.cache, 'pnpm-store'), report.source.artifactPath,
+      '--store-dir', store, report.source.artifactPath,
     ], env)
     if (command.code !== 0) throw new Error(`Offline install failed: ${sanitizeText(command.output, 900)}`)
     const after = await snapshotProfile(report.profile.name)
     const lock = await readFile(join(after.path, 'pnpm-lock.yaml'), 'utf8')
-    const { sha256 } = await import('./util.js')
     if (sha256(lock) !== report.stage.proposedLockHash || after.fingerprint !== report.stage.proposedProfileFingerprint) {
       throw new Error('Actual profile differs from the approved staged proposal')
     }
+    if (report.stage.proposedBundles && JSON.stringify(after.bundles) !== JSON.stringify(report.stage.proposedBundles)) {
+      throw new Error('Actual profile bundle order differs from the approved staged proposal')
+    }
+    if (report.stage.afterConfigHash) {
+      const composed = await run(dsh.command, [...dsh.prefix, '--profile', report.profile.name, '--dump-config'], env)
+      if (composed.code !== 0 || sha256(composed.stdout) !== report.stage.afterConfigHash) {
+        throw new Error('Actual composed config differs from the approved staged proposal')
+      }
+    }
+    const now = new Date()
     const record: InstallRecord = {
       schemaVersion: 1,
       reportId,
-      installedAt: new Date().toISOString(),
-      lastVerifiedAt: new Date().toISOString(),
+      installedAt: now.toISOString(),
+      lastVerifiedAt: now.toISOString(),
       profile: report.profile.name,
       packageName: report.source.name,
       version: report.source.version,
@@ -123,11 +180,42 @@ export async function installApproved(reportId: string, paths: StatePaths): Prom
       expectedBundles: after.bundles,
     }
     await saveInstall(record, paths)
-    await appendAudit(paths, 'install', { reportId, profile: record.profile, packageName: record.packageName, version: record.version, resultingProfileFingerprint: record.resultingProfileFingerprint })
+    const ownedBundles = after.bundles.filter((bundle) => previousPlugin?.bundles.includes(bundle) || !before.bundles.includes(bundle))
+    const plugin: ManagedPluginV1 = {
+      schemaVersion: 1,
+      packageName: report.source.name,
+      version: report.source.version,
+      reportId,
+      artifactSha256: report.source.sha256,
+      installedAt: previousPlugin?.installedAt ?? now.toISOString(),
+      updatedAt: now.toISOString(),
+      bundles: ownedBundles,
+    }
+    const plugins = [
+      ...(previousGeneration?.plugins.filter((candidate) => candidate.packageName !== plugin.packageName) ?? []),
+      plugin,
+    ].sort((a, b) => a.packageName.localeCompare(b.packageName))
+    await recordProfileGeneration(paths, managed, {
+      action: mode,
+      snapshot: after,
+      plugins,
+      ...(report.stage.afterConfigHash ? { configHash: report.stage.afterConfigHash } : {}),
+      reportId,
+      packageName: record.packageName,
+      now,
+    })
+    await appendAudit(paths, mode, { reportId, profile: record.profile, packageName: record.packageName, version: record.version, resultingProfileFingerprint: record.resultingProfileFingerprint }).catch(() => undefined)
+    if (nodeModulesBackup) await rm(nodeModulesBackup, { recursive: true, force: true }).catch(() => undefined)
     return record
   } catch (error) {
-    const recovered = await restoreBackup(report, backup)
-    await appendAudit(paths, recovered ? 'install-failed-recovered' : 'install-failed-needs-repair', { reportId, error: sanitizeText((error as Error).message) })
+    try {
+      if (priorLegacy) await saveInstall(priorLegacy, paths)
+      else await deleteInstall(report.profile.name, paths)
+    } catch { /* recovery result below remains authoritative */ }
+    const recoveredProfile = await restoreBackup(report, backup)
+    const recoveredModules = await restoreNodeModules(report.profile.path, nodeModulesBackup)
+    const recovered = recoveredProfile && recoveredModules
+    await appendAudit(paths, recovered ? `${mode}-failed-recovered` : `${mode}-failed-needs-repair`, { reportId, error: sanitizeText((error as Error).message) })
     if (!recovered) {
       await appendEvent(paths, {
         schemaVersion: 1,
@@ -147,4 +235,12 @@ export async function installApproved(reportId: string, paths: StatePaths): Prom
     await handle?.close()
     await rm(lockPath, { force: true })
   }
+}
+
+export async function installApproved(reportId: string, paths: StatePaths): Promise<InstallRecord> {
+  return applyApprovedReport(reportId, paths, 'install')
+}
+
+export async function updateApproved(reportId: string, paths: StatePaths): Promise<InstallRecord> {
+  return applyApprovedReport(reportId, paths, 'update')
 }

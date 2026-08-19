@@ -7,3 +7,9 @@
         statusPollMs: 15000
         denyTools: []
         askTools: []
+        actionPolicyEnabled: false
+        workspaceRoots: []
+        allowedNetworkDomains: []
+        askUnknownTools: true
+        actionEventMaxBytes: 5242880
+        actionEventMaxFiles: 4

@@ -1,0 +1,57 @@
+[
+  {
+    "toolName": "read",
+    "arguments": { "file_path": "src/index.ts" },
+    "expected": { "operation": "read", "capabilities": ["filesystem.read"], "resourceKinds": ["path"], "effect": "allow" }
+  },
+  {
+    "toolName": "read_image",
+    "arguments": { "file_path": "assets/logo.png" },
+    "expected": { "operation": "read-image", "capabilities": ["filesystem.read"], "resourceKinds": ["path"], "effect": "allow" }
+  },
+  {
+    "toolName": "write",
+    "arguments": { "file_path": "src/output.ts", "content": "export {}" },
+    "expected": { "operation": "write", "capabilities": ["filesystem.write"], "resourceKinds": ["path"], "effect": "allow" }
+  },
+  {
+    "toolName": "edit",
+    "arguments": { "file_path": "src/output.ts", "old_string": "old", "new_string": "new" },
+    "expected": { "operation": "edit", "capabilities": ["filesystem.write"], "resourceKinds": ["path"], "effect": "allow" }
+  },
+  {
+    "toolName": "bash",
+    "arguments": { "command": "git status --short", "description": "status" },
+    "expected": { "operation": "execute", "capabilities": ["process.execute"], "resourceKinds": ["command"], "effect": "allow" }
+  },
+  {
+    "toolName": "bash",
+    "arguments": { "command": "rm -rf -- ./build ./coverage", "description": "clean outputs" },
+    "expected": { "operation": "execute", "capabilities": ["process.execute", "filesystem.delete"], "resourceKinds": ["command", "path", "path"], "effect": "ask" }
+  },
+  {
+    "toolName": "web_fetch",
+    "arguments": { "url": "https://api.github.com/repos" },
+    "expected": { "operation": "fetch", "capabilities": ["network.fetch"], "resourceKinds": ["network"], "effect": "allow" }
+  },
+  {
+    "toolName": "web_search",
+    "arguments": { "query": "DSH extension API" },
+    "expected": { "operation": "search", "capabilities": ["network.send"], "resourceKinds": ["external"], "effect": "allow" }
+  },
+  {
+    "toolName": "run_code",
+    "arguments": { "code": "return 1" },
+    "expected": { "operation": "dispatch", "capabilities": [], "resourceKinds": [], "effect": "allow" }
+  },
+  {
+    "toolName": "batch",
+    "arguments": { "calls": [] },
+    "expected": { "operation": "dispatch", "capabilities": [], "resourceKinds": [], "effect": "allow" }
+  },
+  {
+    "toolName": "third_party_tool",
+    "arguments": { "value": 1 },
+    "expected": { "operation": "invoke", "capabilities": [], "resourceKinds": [], "effect": "ask" }
+  }
+]

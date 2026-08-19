@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 export function sha256(data: string | Uint8Array): string {
@@ -34,9 +34,29 @@ export async function ensurePrivateDir(path: string): Promise<void> {
 export async function atomicWrite(path: string, data: string | Uint8Array, mode = 0o600): Promise<void> {
   await ensurePrivateDir(dirname(path))
   const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
-  await writeFile(temp, data, { mode })
-  await chmod(temp, mode)
-  await rename(temp, path)
+  let renamed = false
+  try {
+    const handle = await open(temp, 'wx', mode)
+    try {
+      await handle.writeFile(data)
+      await handle.chmod(mode)
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    await rename(temp, path)
+    renamed = true
+    const directory = await open(dirname(path), 'r')
+    try {
+      await directory.sync()
+    } finally {
+      await directory.close()
+    }
+  } finally {
+    if (!renamed) {
+      try { await unlink(temp) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    }
+  }
 }
 
 export function sortableId(prefix: string, now = new Date()): string {
@@ -51,7 +71,7 @@ export function isWithin(root: string, candidate: string): boolean {
 export function sanitizeText(input: unknown, max = 1200): string {
   return String(input ?? '')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
-    .replace(/(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]')
+    .replace(/(api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]')
     .slice(0, max)
 }
 

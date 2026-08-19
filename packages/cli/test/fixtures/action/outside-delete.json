@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "act_outside_delete",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "fs.delete",
+  "operation": "delete",
+  "arguments": { "path": "/Users/example/Documents" },
+  "resources": [
+    {
+      "kind": "path",
+      "path": "/Users/example/Documents",
+      "access": "delete",
+      "scope": "outside",
+      "sensitivity": "normal",
+      "targetCount": 100
+    }
+  ],
+  "capabilities": ["filesystem.delete"],
+  "riskHints": []
+}

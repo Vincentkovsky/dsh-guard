@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "act_unknown_network_send",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "http.send",
+  "operation": "send",
+  "arguments": { "method": "POST" },
+  "resources": [
+    {
+      "kind": "network",
+      "direction": "send",
+      "host": "unknown.example",
+      "scheme": "https"
+    }
+  ],
+  "capabilities": ["network.send"],
+  "riskHints": []
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "act_safe_workspace_write",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "fs.write",
+  "operation": "write",
+  "arguments": { "path": "/workspace/project/src/index.ts" },
+  "resources": [
+    {
+      "kind": "path",
+      "path": "/workspace/project/src/index.ts",
+      "access": "write",
+      "scope": "workspace",
+      "sensitivity": "normal"
+    }
+  ],
+  "capabilities": ["filesystem.write"],
+  "riskHints": []
+}

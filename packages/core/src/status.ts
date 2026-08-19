@@ -30,7 +30,8 @@ export async function buildStatusSnapshot(paths: StatePaths, verification: Verif
     label: verification.status === 'verified' ? '已验证' : verification.status === 'drifted' ? '检测到漂移' : verification.status === 'needs-repair' ? '需要修复' : verification.status === 'review' ? '需要审查' : '状态未知',
     detail: verification.detail,
     profile: verification.profile.name,
-    ...(expected ? { lastVerifiedAt: expected.lastVerifiedAt, reportId: expected.reportId } : {}),
+    ...(verification.lastVerifiedAt ? { lastVerifiedAt: verification.lastVerifiedAt } : expected ? { lastVerifiedAt: expected.lastVerifiedAt } : {}),
+    ...(verification.reportId ? { reportId: verification.reportId } : expected ? { reportId: expected.reportId } : {}),
     counts: {
       reports: reports.length,
       review: reports.filter((report) => report.verdict === 'review').length,
@@ -38,6 +39,7 @@ export async function buildStatusSnapshot(paths: StatePaths, verification: Verif
       activeAlerts: events.length,
     },
     events,
-    managedPackages: expected ? [{ name: expected.packageName, version: expected.version, state: verification.status }] : [],
+    managedPackages: verification.managedPlugins?.map((plugin) => ({ name: plugin.packageName, version: plugin.version, state: verification.status }))
+      ?? (expected ? [{ name: expected.packageName, version: expected.version, state: verification.status }] : []),
   }
 }

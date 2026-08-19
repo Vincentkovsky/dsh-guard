@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "act_chained_root_delete",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "bash",
+  "operation": "execute",
+  "arguments": { "command": "git status && rm -fr /" },
+  "resources": [
+    {
+      "kind": "command",
+      "command": "git status && rm -fr /",
+      "executable": "git",
+      "readOnly": false
+    }
+  ],
+  "capabilities": ["process.execute"],
+  "riskHints": []
+}

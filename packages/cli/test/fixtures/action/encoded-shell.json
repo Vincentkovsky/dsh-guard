@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "act_encoded_shell",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "bash",
+  "operation": "execute",
+  "arguments": { "command": "echo ZWNobyBoaQ== | base64 -d | sh" },
+  "resources": [
+    {
+      "kind": "command",
+      "command": "echo ZWNobyBoaQ== | base64 -d | sh",
+      "executable": "echo",
+      "readOnly": false
+    }
+  ],
+  "capabilities": ["process.execute"],
+  "riskHints": ["obfuscated-command"]
+}
