@@ -1,0 +1,25 @@
+{
+  "name": "dsh-guard",
+  "version": "0.1.0",
+  "description": "Supply-chain scanner and policy gate for DeepSeek Harness plugins",
+  "type": "module",
+  "bin": {
+    "dsh-guard": "./lib/bin.js"
+  },
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "files": ["lib"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x lib/bin.js",
+    "clean": "rm -rf lib coverage",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "pnpm --filter @dsh-guard/core build && tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dsh-guard/core": "workspace:*",
+    "commander": "^14.0.0"
+  }
+}

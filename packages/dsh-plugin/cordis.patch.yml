@@ -1,0 +1,9 @@
+- insert:
+    - id: dsh-guard
+      name: '@dsh-guard/companion'
+      inject: [webServer, tools, agents, agentDefaultModel]
+      config:
+        profile: web
+        statusPollMs: 15000
+        denyTools: []
+        askTools: []
