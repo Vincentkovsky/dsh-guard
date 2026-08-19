@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { appendFile, chmod, readFile, readdir } from 'node:fs/promises'
+import { appendFile, chmod, readFile, readdir, rm } from 'node:fs/promises'
 import type { Approval, GuardEvent, InstallRecord, ScanReport } from './types.js'
 import { atomicWrite, ensurePrivateDir, readJson, sha256, stableJson, writeJson } from './util.js'
 
@@ -9,6 +9,8 @@ export interface StatePaths {
   reports: string
   approvals: string
   installs: string
+  managedProfiles: string
+  generations: string
   cache: string
   locks: string
   audit: string
@@ -22,6 +24,8 @@ export function statePaths(root = process.env.DSH_GUARD_HOME ?? join(homedir(), 
     reports: join(root, 'reports'),
     approvals: join(root, 'approvals'),
     installs: join(root, 'installs'),
+    managedProfiles: join(root, 'managed-profiles'),
+    generations: join(root, 'generations'),
     cache: join(root, 'cache'),
     locks: join(root, 'locks'),
     audit: join(root, 'audit.jsonl'),
@@ -31,7 +35,16 @@ export function statePaths(root = process.env.DSH_GUARD_HOME ?? join(homedir(), 
 }
 
 export async function initState(paths: StatePaths): Promise<void> {
-  await Promise.all([paths.root, paths.reports, paths.approvals, paths.installs, paths.cache, paths.locks].map(ensurePrivateDir))
+  await Promise.all([
+    paths.root,
+    paths.reports,
+    paths.approvals,
+    paths.installs,
+    paths.managedProfiles,
+    paths.generations,
+    paths.cache,
+    paths.locks,
+  ].map(ensurePrivateDir))
 }
 
 export async function saveReport(report: ScanReport, paths: StatePaths): Promise<string> {
@@ -67,6 +80,11 @@ export async function loadInstall(profile: string, paths: StatePaths): Promise<I
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
+}
+
+export async function deleteInstall(profile: string, paths: StatePaths): Promise<void> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(profile)) throw new Error('Invalid profile name')
+  await rm(join(paths.installs, `${profile}.json`), { force: true })
 }
 
 export async function appendAudit(paths: StatePaths, action: string, fields: Record<string, unknown>): Promise<void> {

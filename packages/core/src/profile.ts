@@ -1,14 +1,16 @@
 import { spawn } from 'node:child_process'
-import { cp, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import type { InstallRecord, ProfileSnapshot, StageResult, VerifyResult } from './types.js'
 import type { StatePaths } from './state.js'
 import { appendEvent, loadInstall, saveInstall } from './state.js'
+import { currentGeneration, loadOrImportManagedProfile, saveManagedProfile } from './lifecycle.js'
 import { sanitizeText, sha256, sortableId, stableJson } from './util.js'
 
-const PROFILE_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'cordis.yml', 'cordis.patch.yml'] as const
+export const PROFILE_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'cordis.yml', 'cordis.patch.yml'] as const
+const MAX_PROFILE_CONTROL_FILE_BYTES = 32 * 1024 * 1024
 
 export function dshHomePath(override?: string): string {
   return override ?? process.env.DSH_HOME ?? join(homedir(), '.dsh')
@@ -21,7 +23,11 @@ export async function snapshotProfile(name: string, home = dshHomePath()): Promi
   const files: Record<string, string | null> = {}
   for (const file of PROFILE_FILES) {
     try {
-      files[file] = await readFile(join(path, file), 'utf8')
+      const target = join(path, file)
+      const metadata = await lstat(target)
+      if (metadata.isSymbolicLink() || !metadata.isFile()) throw new Error(`Profile control file must be a regular file: ${file}`)
+      if (metadata.size > MAX_PROFILE_CONTROL_FILE_BYTES) throw new Error(`Profile control file exceeds 32 MiB: ${file}`)
+      files[file] = await readFile(target, 'utf8')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') files[file] = null
       else throw error
@@ -62,9 +68,9 @@ function configLines(value: string): string[] {
   return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
 }
 
-export async function stageArtifact(profile: ProfileSnapshot, artifactPath: string, persistentStore?: string): Promise<StageResult> {
+async function stagePluginMutation(profile: ProfileSnapshot, pluginArgs: (store: string) => string[], persistentStore?: string): Promise<StageResult> {
   const dsh = await locateDshBin()
-  if (!dsh) return { attempted: false, compatible: false, reason: 'DSH executable not found; set DSH_BIN to the rc.6 lib/bin.js path' }
+  if (!dsh) return { attempted: false, compatible: false, reason: 'DSH executable not found; set DSH_BIN to the rc.7 lib/bin.js path' }
   const actualDshHome = dirname(dirname(profile.path))
   const stagedHome = await mkdtemp(join(dirname(actualDshHome), '.dsh-guard-stage-'))
   const stagedProfile = join(stagedHome, 'profiles', profile.name)
@@ -93,10 +99,8 @@ export async function stageArtifact(profile: ProfileSnapshot, artifactPath: stri
   if (hydrate.code !== 0) return finish({ attempted: true, compatible: false, reason: `Baseline dependency hydration failed: ${sanitizeText(`${hydrate.stderr}\n${hydrate.stdout}`, 600)}` })
   const before = await run(dsh.command, [...dsh.prefix, '--profile', profile.name, '--dump-config'], env)
   if (before.code !== 0) return finish({ attempted: true, compatible: false, reason: `Baseline config composition failed: ${sanitizeText(`${before.stderr}\n${before.stdout}`, 600)}` })
-  const install = await run(dsh.command, [
-    ...dsh.prefix, 'plugin', '--profile', profile.name, 'add', '--save-exact', '--ignore-scripts', '--store-dir', store, artifactPath,
-  ], env)
-  if (install.code !== 0) return finish({ attempted: true, compatible: false, beforeConfigHash: sha256(before.stdout), reason: `Staged dependency install failed: ${sanitizeText(`${install.stderr}\n${install.stdout}`, 600)}` })
+  const mutation = await run(dsh.command, [...dsh.prefix, 'plugin', '--profile', profile.name, ...pluginArgs(store)], env)
+  if (mutation.code !== 0) return finish({ attempted: true, compatible: false, beforeConfigHash: sha256(before.stdout), reason: `Staged profile mutation failed: ${sanitizeText(`${mutation.stderr}\n${mutation.stdout}`, 600)}` })
   const after = await run(dsh.command, [...dsh.prefix, '--profile', profile.name, '--dump-config'], env)
   if (after.code !== 0) return finish({ attempted: true, compatible: false, beforeConfigHash: sha256(before.stdout), reason: `Candidate config composition failed: ${sanitizeText(`${after.stderr}\n${after.stdout}`, 600)}` })
   const beforeSet = new Set(configLines(before.stdout))
@@ -119,8 +123,63 @@ export async function stageArtifact(profile: ProfileSnapshot, artifactPath: stri
   })
 }
 
+export async function stageArtifact(profile: ProfileSnapshot, artifactPath: string, persistentStore?: string): Promise<StageResult> {
+  return stagePluginMutation(profile, (store) => ['add', '--save-exact', '--ignore-scripts', '--store-dir', store, artifactPath], persistentStore)
+}
+
+export async function stagePackageRemoval(profile: ProfileSnapshot, packageName: string, persistentStore: string): Promise<StageResult> {
+  return stagePluginMutation(profile, (store) => [
+    '--config.ignore-scripts=true',
+    '--config.offline=true',
+    `--config.store-dir=${store}`,
+    'remove', packageName,
+  ], persistentStore)
+}
+
 export async function verifyProfile(name: string, paths: StatePaths, home?: string): Promise<VerifyResult> {
   const current = await snapshotProfile(name, dshHomePath(home))
+  const managed = await loadOrImportManagedProfile(name, paths, home)
+  if (managed) {
+    const generation = currentGeneration(managed)
+    const unmanagedBundles = current.bundles.filter((bundle) => !generation.bundles.includes(bundle))
+    if (current.fingerprint === generation.profileFingerprint && unmanagedBundles.length === 0) {
+      const lastVerifiedAt = new Date().toISOString()
+      await saveManagedProfile({ ...managed, lastVerifiedAt }, paths)
+      return {
+        status: 'verified',
+        profile: current,
+        detail: `Profile files match managed generation ${generation.id}.`,
+        unmanagedBundles,
+        managedPlugins: generation.plugins,
+        generationId: generation.id,
+        lastVerifiedAt,
+        ...(generation.reportId ? { reportId: generation.reportId } : generation.plugins[0]?.reportId ? { reportId: generation.plugins[0].reportId } : {}),
+      }
+    }
+    const type: 'unmanaged-plugin' | 'verified-to-drifted' = unmanagedBundles.length > 0 ? 'unmanaged-plugin' : 'verified-to-drifted'
+    const event = {
+      schemaVersion: 1 as const,
+      id: sortableId('evt'),
+      createdAt: new Date().toISOString(),
+      severity: 'high' as const,
+      type,
+      fingerprint: sha256(`${type}:${name}:${current.fingerprint}:${unmanagedBundles.join(',')}`),
+      title: unmanagedBundles.length > 0 ? '发现未纳管插件' : 'DSH profile 已漂移',
+      detail: unmanagedBundles.length > 0 ? `未纳管 bundle: ${unmanagedBundles.join(', ')}` : `当前 profile 文件与受管 generation ${generation.id} 不一致。`,
+      profile: name,
+    }
+    await appendEvent(paths, event)
+    return {
+      status: 'drifted',
+      profile: current,
+      detail: event.detail,
+      unmanagedBundles,
+      managedPlugins: generation.plugins,
+      generationId: generation.id,
+      ...(managed.lastVerifiedAt ? { lastVerifiedAt: managed.lastVerifiedAt } : {}),
+      ...(generation.reportId ? { reportId: generation.reportId } : generation.plugins[0]?.reportId ? { reportId: generation.plugins[0].reportId } : {}),
+    }
+  }
   const expected = await loadInstall(name, paths)
   if (!expected) return { status: 'unknown', profile: current, detail: 'No DSH Guard installation record exists for this profile.', unmanagedBundles: current.bundles }
   const unmanagedBundles = current.bundles.filter((bundle) => !expected.expectedBundles.includes(bundle))

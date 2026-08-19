@@ -6,5 +6,6 @@
     "jsx": "react-jsx",
     "declarationDir": "lib/types"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [{"path": "../core"}]
 }

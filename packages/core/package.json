@@ -1,6 +1,6 @@
 {
   "name": "@dsh-guard/core",
-  "version": "0.1.0",
+  "version": "0.5.0-alpha.1",
   "description": "Static scanner, immutable artifact resolver, profile verifier, and installer for DSH Guard",
   "type": "module",
   "main": "./lib/index.js",
@@ -9,17 +9,29 @@
     ".": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
+    },
+    "./action": {
+      "types": "./lib/action/index.d.ts",
+      "default": "./lib/action/index.js"
+    },
+    "./lifecycle": {
+      "types": "./lib/lifecycle.d.ts",
+      "default": "./lib/lifecycle.js"
+    },
+    "./state": {
+      "types": "./lib/state.d.ts",
+      "default": "./lib/state.js"
     }
   },
   "files": [
     "lib"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "clean": "rm -rf lib coverage",
+    "build": "tsc -b tsconfig.json --force",
+    "clean": "rm -rf lib coverage tsconfig.tsbuildinfo",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -1,7 +1,7 @@
 {
   "name": "dsh-guard",
-  "version": "0.1.0",
-  "description": "Supply-chain scanner and policy gate for DeepSeek Harness plugins",
+  "version": "0.5.0-alpha.1",
+  "description": "Supply-chain and action policy gate for DeepSeek Harness",
   "type": "module",
   "bin": {
     "dsh-guard": "./lib/bin.js"
@@ -10,12 +10,12 @@
   "types": "./lib/index.d.ts",
   "files": ["lib"],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x lib/bin.js",
-    "clean": "rm -rf lib coverage",
-    "test": "vitest run --passWithNoTests",
+    "build": "tsc -b tsconfig.json --force && chmod +x lib/bin.js",
+    "clean": "rm -rf lib coverage tsconfig.tsbuildinfo",
+    "test": "pnpm --filter @dsh-guard/core build && vitest run",
     "typecheck": "pnpm --filter @dsh-guard/core build && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "act_sensitive_env_read",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "fs.read",
+  "operation": "read",
+  "arguments": { "path": "/workspace/project/.env" },
+  "resources": [
+    {
+      "kind": "path",
+      "path": "/workspace/project/.env",
+      "access": "read",
+      "scope": "workspace",
+      "sensitivity": "sensitive"
+    }
+  ],
+  "capabilities": ["filesystem.read"],
+  "riskHints": []
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "act_safe_source_read",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "fs.read",
+  "operation": "read",
+  "arguments": { "path": "/workspace/project/src/index.ts" },
+  "resources": [
+    {
+      "kind": "path",
+      "path": "/workspace/project/src/index.ts",
+      "access": "read",
+      "scope": "workspace",
+      "sensitivity": "normal"
+    }
+  ],
+  "capabilities": ["filesystem.read"],
+  "riskHints": []
+}

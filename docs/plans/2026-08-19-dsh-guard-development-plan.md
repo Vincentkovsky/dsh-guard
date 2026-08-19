@@ -1,8 +1,10 @@
 # DSH Guard 开发计划
 
 > 基线日期：2026-08-19
-> 当前状态：功能原型已实现并通过 12 个测试、隔离 E2E 和真实 DSH UI QA；仓库尚无提交
+> 历史快照：本文写作时功能原型通过 12 个测试、隔离 E2E 和真实 DSH UI QA，仓库尚无提交
 > 计划目标：把“可运行原型”推进到“可审计的本地 alpha”，再决定是否进入 beta/发布
+
+> 本文保留为 v0.1 Trust Gate 的历史计划，未勾选项不是当前发布清单。当前 v0.2 状态见 [Action Gate 开发计划](./2026-08-19-dsh-guard-v2-development-plan.md) 和 [本地 Alpha 运行手册](../runbooks/2026-08-19-v0.2-local-alpha.md)。
 
 ## 1. 执行原则
 
@@ -11,7 +13,7 @@
 3. 任何 blocker 都由确定性规则产生，Sidecar 只解释。
 4. 不以“测试通过”替代威胁模型审查，也不以“UI 正常”替代安装链验证。
 5. 所有开发和 E2E 使用隔离的 `DSH_HOME` / `DSH_GUARD_HOME`，禁止修改真实 `web` profile。
-6. 当前所有文件均未提交；首次提交前先完成基线审计，避免把原型状态误标为 release。
+6. 在历史基线首次提交前，所有文件均未提交；当时要求先完成基线审计，避免把原型状态误标为 release。
 
 ## 2. 当前实现盘点
 
@@ -64,10 +66,10 @@
 
 ### M0.2 运行时与包元数据（P0）
 
-- [ ] 将根包、core、CLI、Companion 的 `engines.node` 统一为 `>=22.22.0`。
-- [ ] 明确 `packageManager` 与 lockfile 版本，记录用于验证的 pnpm 版本。
-- [ ] 添加 `doctor` 回归测试，覆盖 Node 下限、DSH_BIN 缺失和目录权限。
-- [ ] 确认所有 package `files/exports/bin` 与实际构建产物一致。
+- [x] 将根包、core、CLI、Companion 的 `engines.node` 统一为 `>=22.22.0`。
+- [x] 明确 `packageManager` 与 lockfile 版本，记录用于验证的 pnpm `10.12.1`。
+- [x] 添加 `doctor` 回归测试，覆盖 Node 下限、DSH_BIN 缺失和目录权限。
+- [x] 使用 `npm pack --dry-run --ignore-scripts` 确认所有 package 的 `files/exports/bin` 与实际构建产物一致。
 
 验收：在不满足运行时下限时 fail fast，不出现“安装成功但 Host 无法启动”。
 
@@ -250,8 +252,9 @@ ProfileGenerationV2
 
 ### M4.1 可重复构建与 CI（P0）
 
-- [ ] 新增 CI：install with `--ignore-scripts`、typecheck、test、build、package dry-run。
-- [ ] 固定 Node `22.22.x` 与 pnpm `10.12.1` 的主验证组合。
+- [x] 新增 CI：使用 frozen lockfile 禁用安装脚本，并执行 typecheck、test、build。
+- [x] 固定 Node `22.22.0` 与 pnpm `10.12.1` 的主验证组合。
+- [ ] 在 CI 中增加 package dry-run 和产物内容检查。
 - [ ] 对 DSH rc.6 E2E 使用显式缓存/fixture，不读取 CI 主机真实 profile。
 - [ ] 检查生成包不包含 source fixtures、报告、缓存、`.env` 或绝对本机路径。
 

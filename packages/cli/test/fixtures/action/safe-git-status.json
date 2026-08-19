@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "act_safe_git_status",
+  "createdAt": "2026-08-19T00:00:00.000Z",
+  "profile": "web",
+  "sessionId": "session-corpus",
+  "taskId": "task-corpus",
+  "toolName": "bash",
+  "operation": "execute",
+  "arguments": { "command": "git status --short" },
+  "resources": [
+    {
+      "kind": "command",
+      "command": "git status --short",
+      "executable": "git",
+      "readOnly": true
+    }
+  ],
+  "capabilities": ["process.execute"],
+  "riskHints": []
+}

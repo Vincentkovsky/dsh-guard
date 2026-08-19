@@ -4,6 +4,8 @@
 > 目标环境：DeepSeek Harness `0.1.0-rc.6`、macOS、Node.js `22.22+`
 > 文档用途：架构评审、安全评审、开发验收和后续版本决策
 
+> 本文保留为已实现的 v0.1 Trust Gate 基线。后续产品目标见 [v2 产品与架构设计](./2026-08-19-dsh-guard-v2-design.md)。
+
 ## 1. 摘要
 
 DSH Guard 是 DeepSeek Harness（DSH）第三方插件的本地供应链闸门。它在候选插件进入真实 DSH profile 之前，把来源解析、制品固定、静态能力分析、目标 profile 兼容性预演、人工审批和离线安装串成一个可审计流程；安装后再通过 profile 指纹和 DSH 内嵌 Companion 提供漂移检测、状态展示、严重告警与按精确工具名执行的纵深策略。

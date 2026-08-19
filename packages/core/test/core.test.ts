@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as tar from 'tar'
@@ -15,6 +15,7 @@ import {
   appendEvent,
   readEvents,
   statePaths,
+  sanitizeText,
 } from '../src/index.js'
 
 const previousDshHome = process.env.DSH_HOME
@@ -45,6 +46,10 @@ async function profile(home: string, bundles: string[] = ['@deepseek-ai/dsh-base
 }
 
 describe('immutable artifacts', () => {
+  it('redacts named secrets with a stable label', () => {
+    expect(sanitizeText('token=super-secret password:another-secret')).toBe('token=[redacted] password=[redacted]')
+  })
+
   it('packs a local directory deterministically with npm packlist', async () => {
     const root = await fixture({
       'package.json': JSON.stringify({ name: 'fixture-safe', version: '1.0.0', files: ['index.js'] }),
@@ -141,6 +146,15 @@ describe('approval binding', () => {
     const after = await snapshotProfile('web', home)
     expect(report.verdict).toBe('blocked')
     expect(after.fingerprint).toBe(before.fingerprint)
+  })
+
+  it('rejects symlinked profile control files', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-home-'))
+    const profileRoot = await profile(home)
+    const outside = await fixture({ 'outside-package.json': '{"name":"outside"}\n' })
+    await rm(join(profileRoot, 'package.json'))
+    await symlink(join(outside, 'outside-package.json'), join(profileRoot, 'package.json'))
+    await expect(snapshotProfile('web', home)).rejects.toThrow(/regular file/)
   })
 
   it('deduplicates unresolved events by stable fingerprint', async () => {
